@@ -295,7 +295,7 @@ def init_state():
 # ─── Groq ──────────────────────────────────────────────────────────────────────
 @st.cache_resource
 def get_groq_client():
-    key = os.environ.get("GROQ_API_KEY", "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")
+    key = st.secrets["GROQ_API_KEY"]
     return Groq(api_key=key) if key else None
 
 def transcribe(audio_bytes: bytes, fname="audio.wav") -> str:
