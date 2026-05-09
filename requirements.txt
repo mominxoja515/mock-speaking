@@ -5,5 +5,4 @@ streamlit_mic_recorder==0.0.8
 numpy
 pillow
 pandas
-# Agar loyihangizda Whisper ishlatgan bo'lsangiz:
-# openai-whisper
+openai-whisper
