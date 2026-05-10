@@ -10,57 +10,6 @@ from datetime import datetime
 from groq import Groq
 from questions import get_random_mock, get_random_part, get_all_pools, save_custom_questions, load_custom_questions
 
-# ─── Flask audio upload server ────────────────────────────────────────────────
-import threading, pathlib
-from flask import Flask, request, jsonify
-
-AUDIO_DIR = pathlib.Path(tempfile.gettempdir()) / "st_audio_uploads"
-AUDIO_DIR.mkdir(exist_ok=True)
-FLASK_PORT = 8502
-
-_flask_app = Flask(__name__)
-_flask_app.config["MAX_CONTENT_LENGTH"] = 50 * 1024 * 1024  # 50 MB
-
-@_flask_app.route("/upload_audio", methods=["POST", "OPTIONS"])
-def upload_audio():
-    if request.method == "OPTIONS":
-        resp = jsonify({"ok": True})
-        resp.headers["Access-Control-Allow-Origin"]  = "*"
-        resp.headers["Access-Control-Allow-Headers"] = "Content-Type"
-        resp.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
-        return resp
-    label = request.args.get("label", "audio")
-    data  = request.get_data()
-    if not data:
-        return jsonify({"error": "empty"}), 400
-    (AUDIO_DIR / f"{label}.webm").write_bytes(data)
-    resp = jsonify({"ok": True, "label": label, "size": len(data)})
-    resp.headers["Access-Control-Allow-Origin"] = "*"
-    return resp
-
-def _run_flask():
-    import logging
-    log = logging.getLogger("werkzeug")
-    log.setLevel(logging.ERROR)
-    _flask_app.run(host="0.0.0.0", port=FLASK_PORT, debug=False, use_reloader=False)
-
-@st.cache_resource
-def _start_flask():
-    t = threading.Thread(target=_run_flask, daemon=True)
-    t.start()
-    return True
-
-_start_flask()  # Streamlit startup da bir marta ishga tushadi
-
-def get_audio_file(label_id: str):
-    """Diskdan audio faylni o'qib bytes qaytaradi, keyin o'chiradi."""
-    path = AUDIO_DIR / f"{label_id}.webm"
-    if path.exists() and path.stat().st_size > 100:
-        data = path.read_bytes()
-        path.unlink(missing_ok=True)
-        return data
-    return None
-
 # ─── Page Config ───────────────────────────────────────────────────────────────
 st.set_page_config(page_title="Speaking Mock Test", page_icon="🎙️", layout="centered")
 
@@ -647,101 +596,6 @@ def page_mode_select():
                 st.rerun()
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# AUTO RECORDER — JS MediaRecorder → Flask /upload_audio → Python disk dan o'qiydi
-# ═══════════════════════════════════════════════════════════════════════════════
-def auto_recorder_html(label_id: str, duration_ms: int) -> str:
-    return f"""
-<div id="rec_box_{label_id}" style="
-  background:rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.35);
-  border-radius:12px;padding:0.9rem 1.2rem;text-align:center;
-  margin:0.5rem 0;font-size:0.9rem;color:#f87171;">
-  <span id="rdot_{label_id}" style="display:inline-block;width:10px;height:10px;
-    border-radius:50%;background:#f87171;animation:rp 1s infinite alternate;
-    margin-right:6px;"></span>
-  <span id="rtxt_{label_id}">🎙️ Mikrofon ulanmoqda...</span>
-</div>
-<style>@keyframes rp{{from{{opacity:1}}to{{opacity:0.2}}}}</style>
-<script>
-(function(){{
-  var LBL  = "{label_id}";
-  var DUR  = {duration_ms};
-  var PORT = {FLASK_PORT};
-  var dot  = document.getElementById("rdot_" + LBL);
-  var txt  = document.getElementById("rtxt_" + LBL);
-  var box  = document.getElementById("rec_box_" + LBL);
-  var doneKey = "rec_sent_" + LBL;
-
-  function setDone(msg) {{
-    box.style.background  = "rgba(74,222,128,0.1)";
-    box.style.borderColor = "rgba(74,222,128,0.35)";
-    box.style.color       = "#4ade80";
-    dot.style.background  = "#4ade80";
-    dot.style.animation   = "none";
-    txt.textContent       = msg;
-  }}
-  function setErr(msg) {{
-    box.style.background  = "rgba(251,191,36,0.1)";
-    box.style.borderColor = "rgba(251,191,36,0.35)";
-    box.style.color       = "#fbbf24";
-    dot.style.background  = "#fbbf24";
-    dot.style.animation   = "none";
-    txt.textContent       = msg;
-  }}
-
-  if (sessionStorage.getItem(doneKey)) {{
-    setDone("✅ Audio yuborildi — tahlil kutilyapti…");
-    return;
-  }}
-
-  navigator.mediaDevices.getUserMedia({{
-    audio: {{ echoCancellation:true, noiseSuppression:true, sampleRate:16000 }}
-  }}).then(function(stream) {{
-    var mime = "audio/webm";
-    if (MediaRecorder.isTypeSupported("audio/webm;codecs=opus")) mime = "audio/webm;codecs=opus";
-
-    var mr = new MediaRecorder(stream, {{ mimeType: mime }});
-    var chunks = [];
-
-    mr.ondataavailable = function(e) {{ if (e.data && e.data.size > 0) chunks.push(e.data); }};
-
-    mr.onstop = function() {{
-      stream.getTracks().forEach(function(t) {{ t.stop(); }});
-      txt.textContent = "📤 Audio yuklanmoqda...";
-      var blob = new Blob(chunks, {{ type: "audio/webm" }});
-
-      fetch("http://localhost:" + PORT + "/upload_audio?label=" + LBL, {{
-        method: "POST",
-        headers: {{ "Content-Type": "audio/webm" }},
-        body: blob
-      }}).then(function(r) {{ return r.json(); }})
-        .then(function(d) {{
-          if (d.ok) {{
-            sessionStorage.setItem(doneKey, "1");
-            setDone("✅ Audio yuborildi (" + Math.round(blob.size/1024) + " KB)");
-          }} else {{
-            setErr("⚠️ Yuborishda xato: " + JSON.stringify(d));
-          }}
-        }}).catch(function(err) {{
-          setErr("⚠️ Upload xato: " + err.message);
-        }});
-    }};
-
-    mr.start(500);
-    txt.textContent = "🎙️ Yozib olinmoqda — gapiring...";
-    dot.style.background = "#f87171";
-
-    setTimeout(function() {{
-      if (mr.state === "recording") mr.stop();
-    }}, DUR);
-
-  }}).catch(function(err) {{
-    setErr("⚠️ Mikrofon ruxsati: " + err.message);
-  }});
-}})();
-</script>
-"""
-
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # PAGE: TEST
@@ -854,48 +708,47 @@ def page_test():
         remaining = max(0, speak_time - int(elapsed))
         label_id  = f"{part_key}_q{q_idx+1}"
 
-        # Disk dan audio kelganmi?
-        audio_bytes = get_audio_file(label_id)
-        if audio_bytes:
-            st.session_state.pending_audios[label_id] = audio_bytes
-            _advance(part, part_key, q_idx, total_q)
-            return
-
-        # Timer tugdi, audio hali yo'q — biroz kutib qayta tekshir
-        if remaining <= 0:
-            st.info("⏳ Audio yuklanmoqda, iltimos kuting…")
-            time.sleep(1)
-            st.rerun()
-            return
-
-        # Yozish jarayoni
         st.markdown(
             f'<span class="badge badge-rec"><span class="rdot"></span>' +
-            f'🎙️ GAPIRING — {fmt_time(remaining)} qoldi</span>',
+            f'🎙️ GAPIRING</span>',
             unsafe_allow_html=True
         )
         st.markdown(f"""
         <div class="timer-wrap timer-speak">
           <div class="timer-label">⏱ Gapirish vaqti</div>
-          <div class="timer-val">{fmt_time(remaining)}</div>
+          <div class="timer-val">{fmt_time(max(0,remaining))}</div>
         </div>""", unsafe_allow_html=True)
-        st.markdown(eq_html(24), unsafe_allow_html=True)
 
-        st.components.v1.html(
-            auto_recorder_html(label_id, speak_time * 1000),
-            height=80
+        st.markdown(eq_html(24), unsafe_allow_html=True)
+        st.markdown(
+            '<div style="text-align:center;color:rgba(255,255,255,0.6);font-size:0.85rem;margin:0.5rem 0;">' +
+            '🎙️ Quyida mikrofon tugmasini bosib gapirib, to\'xtatgach yuklang</div>',
+            unsafe_allow_html=True
         )
 
-        c1, c2, c3 = st.columns([2, 1, 2])
-        with c2:
-            st.markdown('<div class="skip-btn">', unsafe_allow_html=True)
-            if st.button("O'tkazish ⏭", key=f"skip_speak_{label_id}"):
-                st.session_state.pending_audios[label_id] = None
-                _advance(part, part_key, q_idx, total_q)
-            st.markdown('</div>', unsafe_allow_html=True)
+        audio_val = st.audio_input(" ", key=f"mic_{label_id}", label_visibility="collapsed")
 
-        time.sleep(0.8)
-        st.rerun()
+        if audio_val is not None:
+            abytes = audio_val.read()
+            if abytes:
+                st.session_state.pending_audios[label_id] = abytes
+            else:
+                st.session_state.pending_audios[label_id] = None
+            _advance(part, part_key, q_idx, total_q)
+        else:
+            if remaining <= 0:
+                # Vaqt tugadi, foydalanuvchi hali yuklamagan — kutamiz
+                st.warning("⏱ Vaqt tugadi. Audiongizni yuboring yoki o'tkazish tugmasini bosing.")
+            c1, c2, c3 = st.columns([2, 1, 2])
+            with c2:
+                st.markdown('<div class="skip-btn">', unsafe_allow_html=True)
+                if st.button("O'tkazish ⏭", key=f"skip_{label_id}"):
+                    st.session_state.pending_audios[label_id] = None
+                    _advance(part, part_key, q_idx, total_q)
+                st.markdown('</div>', unsafe_allow_html=True)
+            if remaining > 0:
+                time.sleep(0.8)
+                st.rerun()
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Part 2 / Part 3 uchun: BARCHA SAVOLLAR bitta ekranda, BITTA timer
@@ -990,51 +843,46 @@ def _page_test_all_questions(part, part_key, elapsed, part_idx, total_parts):
         remaining = max(0, speak_time - int(elapsed))
         label_id  = f"{part_key}_all"
 
-        # Disk dan audio kelganmi?
-        audio_bytes = get_audio_file(label_id)
-        if audio_bytes:
-            st.session_state.pending_audios[label_id] = audio_bytes
-            _advance_part(part_key)
-            return
-
-        if remaining <= 0:
-            st.info("⏳ Audio yuklanmoqda, iltimos kuting…")
-            time.sleep(1)
-            st.rerun()
-            return
-
         st.markdown(
             '<span class="badge badge-rec"><span class="rdot"></span>' +
-            f'🎙️ GAPIRING — {fmt_time(remaining)} qoldi</span>',
+            f'🎙️ GAPIRING — barcha savollarga javob bering</span>',
             unsafe_allow_html=True
         )
         st.markdown(f"""
         <div class="timer-wrap timer-speak">
-          <div class="timer-label">⏱ Barcha savollarga javob bering</div>
-          <div class="timer-val">{fmt_time(remaining)}</div>
+          <div class="timer-label">⏱ Gapirish vaqti</div>
+          <div class="timer-val">{fmt_time(max(0,remaining))}</div>
         </div>""", unsafe_allow_html=True)
+
         st.markdown(eq_html(24), unsafe_allow_html=True)
         st.markdown(
-            '<div style="text-align:center;color:rgba(255,255,255,0.5);font-size:0.82rem;margin-top:0.4rem;">' +
-            '📋 Barcha savollarga ketma-ket javob bering</div>',
+            '<div style="text-align:center;color:rgba(255,255,255,0.6);font-size:0.85rem;margin:0.5rem 0;">' +
+            '🎙️ Barcha savollarga ketma-ket javob bering, tugagach yuklang</div>',
             unsafe_allow_html=True
         )
 
-        st.components.v1.html(
-            auto_recorder_html(label_id, speak_time * 1000),
-            height=80
-        )
+        audio_val = st.audio_input(" ", key=f"mic_{label_id}", label_visibility="collapsed")
 
-        c1, c2, c3 = st.columns([2, 1, 2])
-        with c2:
-            st.markdown('<div class="skip-btn">', unsafe_allow_html=True)
-            if st.button("O'tkazish ⏭", key=f"skip_speak_{part_key}_all"):
+        if audio_val is not None:
+            abytes = audio_val.read()
+            if abytes:
+                st.session_state.pending_audios[label_id] = abytes
+            else:
                 st.session_state.pending_audios[label_id] = None
-                _advance_part(part_key)
-            st.markdown('</div>', unsafe_allow_html=True)
-
-        time.sleep(0.8)
-        st.rerun()
+            _advance_part(part_key)
+        else:
+            if remaining <= 0:
+                st.warning("⏱ Vaqt tugadi. Audiongizni yuboring yoki o'tkazish tugmasini bosing.")
+            c1, c2, c3 = st.columns([2, 1, 2])
+            with c2:
+                st.markdown('<div class="skip-btn">', unsafe_allow_html=True)
+                if st.button("O'tkazish ⏭", key=f"skip_{part_key}_all"):
+                    st.session_state.pending_audios[label_id] = None
+                    _advance_part(part_key)
+                st.markdown('</div>', unsafe_allow_html=True)
+            if remaining > 0:
+                time.sleep(0.8)
+                st.rerun()
 def _advance_part(part_key):
     """Part 2 / Part 3 tugagandan keyin keyingi partga o'tish yoki finish."""
     nxt = st.session_state.current_part_idx + 1
@@ -1066,7 +914,6 @@ def _advance(part, part_key, q_idx, total_q):
 
 
 def _finish():
-    """Test tugadi: pending_audios → batch transcribe → evaluate → save."""
     mock    = st.session_state.mock_data
     pending = st.session_state.get("pending_audios", {})
 
@@ -1078,27 +925,20 @@ def _finish():
 
     # Batch transcribe
     transcripts = {}
-    items = []  # (label_id, audio_bytes, is_all, part_key, n_q)
-
+    items = []
     for pk in st.session_state.part_order:
         n_q = len(mock.get(pk, {}).get("questions", []))
         if pk in ("part2", "part3"):
-            items.append((f"{pk}_all", pending.get(f"{pk}_all"), True, pk, n_q))
+            items.append((f"{pk}_all", True, pk, n_q))
         else:
             for i in range(n_q):
-                lbl = f"{pk}_q{i+1}"
-                items.append((lbl, pending.get(lbl), False, pk, n_q))
+                items.append((f"{pk}_q{i+1}", False, pk, n_q))
 
-    total = len(items)
-    bar   = st.progress(0, text="🎙️ Ovozlar tahlil qilinmoqda…")
-
-    for idx, (lbl, abytes, is_all, pk, n_q) in enumerate(items):
-        bar.progress((idx) / max(total, 1), text=f"🎙️ Tahlil: {idx+1}/{total}…")
-        if abytes:
-            txt = _do_transcribe(abytes, f"{lbl}.webm")
-        else:
-            txt = "[Ovoz kiritilmadi]"
-
+    bar = st.progress(0, text="🎙️ Ovozlar tahlil qilinmoqda…")
+    for idx, (lbl, is_all, pk, n_q) in enumerate(items):
+        bar.progress(idx / max(len(items), 1), text=f"🎙️ Tahlil: {idx+1}/{len(items)}")
+        abytes = pending.get(lbl)
+        txt = _do_transcribe(abytes, f"{lbl}.webm") if abytes else "[Ovoz kiritilmadi]"
         if is_all:
             for i in range(n_q):
                 transcripts[f"{pk}_q{i+1}"] = txt
@@ -1106,7 +946,6 @@ def _finish():
             transcripts[lbl] = txt
 
     bar.progress(0.95, text="🤖 AI baholayapti…")
-
     results = evaluate(
         transcripts,
         st.session_state.user_name,
@@ -1119,7 +958,6 @@ def _finish():
     st.session_state.results     = results
 
     pool_ids = {pk: mock[pk]["pool_id"] for pk in st.session_state.part_order if "pool_id" in mock.get(pk, {})}
-
     save_student_result({
         "name":          st.session_state.user_name,
         "date":          datetime.now().strftime("%Y-%m-%d %H:%M"),
@@ -1130,7 +968,6 @@ def _finish():
         "results":       results,
         "audio_files":   {},
     })
-
     st.session_state.page = "results"
     st.rerun()
 
