@@ -633,6 +633,23 @@ def page_test():
     </div>
     """, unsafe_allow_html=True)
 
+    # Part 1.1 uchun rasm ko'rsatish (savol matnidan OLDIN)
+    if part_key == "part1_1":
+        img_b64 = part.get("img_b64", "")
+        img_desc = part.get("image_description", "")
+        if img_b64:
+            st.markdown(
+                f'<img src="data:image/jpeg;base64,{img_b64}" '
+                f'style="width:100%;max-width:620px;border-radius:16px;'
+                f'border:1px solid rgba(255,255,255,0.15);margin:0.5rem auto 1rem;display:block;" />',
+                unsafe_allow_html=True
+            )
+        if img_desc:
+            st.markdown(
+                f'<div class="img-desc">🖼️ <strong>Rasm:</strong> {img_desc}</div>',
+                unsafe_allow_html=True
+            )
+
     # Savol matni
     current_q_text = all_questions[q_idx] if q_idx < len(all_questions) else ""
     st.markdown(f"""
