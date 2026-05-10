@@ -983,26 +983,30 @@ def page_results():
         ("📝 Grammatika Doirasi va Aniqligi",  r.get("grammar_score", 0)),
         ("🔊 Talaffuz",             r.get("pronunciation_score", 0)),
     ]
-    for cname, score in criteria:
-    try:
-    # Kelgan qiymatni songa aylantirishga harakat qilamiz
-    score = float(score) if score is not None else 0.0
-except (ValueError, TypeError):
-    # Agar xato bo'lsa (masalan score "N/A" bo'lsa), 0.0 deb olamiz
-    score = 0.0
+for cname, score in criteria:
+        try:
+            # Kelgan qiymatni songa aylantirishga harakat qilamiz
+            score = float(score) if score is not None else 0.0
+        except (ValueError, TypeError):
+            # Agar xato bo'lsa (masalan score "N/A" bo'lsa), 0.0 deb olamiz
+            score = 0.0
+        
+        # Bu qatorlar endi try-except blokidan tashqarida, lekin 'for' tsikli ichida:
         pct = int((score / 9) * 100)
         c = "#4ade80" if score >= 7 else "#fbbf24" if score >= 5.5 else "#f87171"
+        
+        # Stilizatsiya qilingan natijani chiqarish kodi shu yerdan davom etadi...
         st.markdown(f"""
-        <div style="margin-bottom:1.1rem;">
-          <div style="display:flex;justify-content:space-between;margin-bottom:5px;">
-            <span style="color:rgba(255,255,255,0.82);font-size:0.9rem;">{cname}</span>
-            <span style="font-weight:800;color:{c};font-size:1rem;">{score}</span>
-          </div>
-          <div class="score-bar-bg">
-            <div class="score-bar-fill" style="width:{pct}%;background:linear-gradient(90deg,{c},{c}99);"></div>
-          </div>
-        </div>""", unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
+            <div style="margin-bottom:1rem;">
+                <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
+                    <span style="font-weight:600; color:rgba(255,255,255,0.85);">{cname}</span>
+                    <span style="font-weight:700; color:{c};">{score} / 9</span>
+                </div>
+                <div style="background:rgba(255,255,255,0.05); border-radius:10px; height:8px; overflow:hidden;">
+                    <div style="background:{c}; width:{pct}%; height:100%; border-radius:10px;"></div>
+                </div>
+            </div>
+        """, unsafe_allow_html=True)
 
     # Topic relevance issues
     topic_issues = r.get("topic_relevance_issues", [])
