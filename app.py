@@ -602,24 +602,24 @@ def page_mode_select():
 # ═══════════════════════════════════════════════════════════════════════════════
 def page_test():
     part, part_key = current_part_data()
-    q_idx     = st.session_state.current_q
+    q_idx = st.session_state.current_q
     all_questions = part["questions"]
-    total_q   = len(all_questions)
+    total_q = len(all_questions)
 
-    elapsed   = time.time() - (st.session_state.timer_start or time.time())
-    part_idx  = st.session_state.current_part_idx
+    # Taymerni hisoblash
+    if st.session_state.timer_start is None:
+        st.session_state.timer_start = time.time()
+    
+    elapsed = time.time() - st.session_state.timer_start
+    part_idx = st.session_state.current_part_idx
     total_parts = len(st.session_state.part_order)
 
-    # ══════════════════════════════════════════════════════════════════
-    # Part 2 va Part 3: barcha savollar bitta ekranda, bitta timer
-    # ══════════════════════════════════════════════════════════════════
+    # Part 2 va Part 3 uchun alohida sahifa (agar u yerda ham recorder bo'lsa, uni ham shunday soddalashtiring)
     if part_key in ("part2", "part3"):
         _page_test_all_questions(part, part_key, elapsed, part_idx, total_parts)
         return
 
-    # ══════════════════════════════════════════════════════════════════
-    # Part 1 va Part 1.1: savol-savol (eski logika)
-    # ══════════════════════════════════════════════════════════════════
+    # Tepadagi ma'lumotlar paneli (Header)
     st.markdown(f"""
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
       <span style="background:linear-gradient(135deg,#667eea,#a78bfa);
@@ -633,36 +633,7 @@ def page_test():
     </div>
     """, unsafe_allow_html=True)
 
-    # ── Instruction ──
-    if q_idx == 0:
-        st.markdown(f'<div class="card-blue" style="font-size:0.88rem;color:rgba(255,255,255,0.7)!important;">'
-                    f'📋 {part["instruction"]}</div>', unsafe_allow_html=True)
-
-    # ── Image: Part 1.1 haqiqiy rasm (base64), boshqalarda matn tavsif ──
-    img_b64  = part.get("img_b64", "")
-    img_desc = part.get("image_description", "")
-
-    if part_key == "part1_1" and img_b64:
-        st.markdown(
-            f'<div style="margin:0.7rem 0;border:1px solid rgba(167,139,250,0.3);'
-            f'border-radius:14px;overflow:hidden;">'
-            f'<img src="data:image/jpeg;base64,{img_b64}" '
-            f'style="width:100%;max-height:340px;object-fit:contain;display:block;'
-            f'background:#0d0d1a;padding:0.5rem;" /></div>',
-            unsafe_allow_html=True
-        )
-        if img_desc:
-            st.markdown(
-                f'<div style="color:rgba(255,255,255,0.4);font-size:0.78rem;'
-                f'text-align:center;margin-bottom:0.6rem;">'
-                f'🖼️ {img_desc}</div>',
-                unsafe_allow_html=True
-            )
-    elif img_desc:
-        st.markdown(f'<div class="img-desc">🖼️ <strong>Rasm:</strong> {img_desc}</div>',
-                    unsafe_allow_html=True)
-
-    # ── Question ──
+    # Savol matni
     current_q_text = all_questions[q_idx] if q_idx < len(all_questions) else ""
     st.markdown(f"""
     <div class="q-box">
@@ -670,86 +641,72 @@ def page_test():
       {current_q_text}
     </div>""", unsafe_allow_html=True)
 
-    # Prep time
-    prep_time  = get_prep_time_for_question(part_key, q_idx, part)
+    # Vaqt sozlamalari
+    prep_time = get_prep_time_for_question(part_key, q_idx, part)
     speak_time = part["speak_time"]
 
-    # ── PHASE: PREP ──
+    # ── PHASE: PREP (Tayyorlanish) ──
     if st.session_state.phase == "prep":
         remaining = max(0, prep_time - int(elapsed))
         st.markdown(f'<span class="badge badge-prep">⏳ TAYYORLANISH VAQTI</span>', unsafe_allow_html=True)
-        ph = st.empty()
-
-        ph.markdown(f"""
+        
+        st.markdown(f"""
         <div class="timer-wrap">
           <div class="timer-label">Javobingizni tayyorlang</div>
           <div class="timer-val">{fmt_time(remaining)}</div>
         </div>""", unsafe_allow_html=True)
 
-        c1, c2, c3 = st.columns([2, 1, 2])
-        with c2:
-            st.markdown('<div class="skip-btn">', unsafe_allow_html=True)
-            if st.button("O'tkazish →", key=f"skip_prep_{part_key}_{q_idx}"):
-                st.session_state.phase = "speak"
-                st.session_state.timer_start = time.time()
-                st.rerun()
-            st.markdown('</div>', unsafe_allow_html=True)
+        if st.button("Tayyorman, gapirishni boshlash →", key=f"skip_prep_{part_key}_{q_idx}"):
+            st.session_state.phase = "speak"
+            st.session_state.timer_start = time.time()
+            st.rerun()
 
         if remaining > 0:
-            time.sleep(0.8)
+            time.sleep(1)
             st.rerun()
         else:
             st.session_state.phase = "speak"
             st.session_state.timer_start = time.time()
             st.rerun()
 
-    # ── PHASE: SPEAK ──
+    # ── PHASE: SPEAK (Gapirish va Ovoz yozish) ──
     elif st.session_state.phase == "speak":
         remaining = max(0, speak_time - int(elapsed))
-        label_id  = f"{part_key}_q{q_idx+1}"
+        label_id = f"{part_key}_q{q_idx+1}"
 
-        st.markdown(
-            f'<span class="badge badge-rec"><span class="rdot"></span>' +
-            f'🎙️ GAPIRING</span>',
-            unsafe_allow_html=True
-        )
+        st.markdown(f'<span class="badge badge-rec">🎙️ GAPIRING</span>', unsafe_allow_html=True)
+        
         st.markdown(f"""
         <div class="timer-wrap timer-speak">
-          <div class="timer-label">⏱ Gapirish vaqti</div>
-          <div class="timer-val">{fmt_time(max(0,remaining))}</div>
+          <div class="timer-label">⏱ Qolgan vaqt</div>
+          <div class="timer-val">{fmt_time(remaining)}</div>
         </div>""", unsafe_allow_html=True)
 
-        st.markdown(eq_html(24), unsafe_allow_html=True)
-        st.markdown(
-            '<div style="text-align:center;color:rgba(255,255,255,0.6);font-size:0.85rem;margin:0.5rem 0;">' +
-            '🎙️ Quyida mikrofon tugmasini bosib gapirib, to\'xtatgach yuklang</div>',
-            unsafe_allow_html=True
-        )
-
-        audio_val = st.audio_input(" ", key=f"mic_{label_id}", label_visibility="collapsed")
+        # Equalizer olib tashlandi, o'rniga standart va ishonchli audio_input
+        audio_val = st.audio_input("Ovozingizni yozing", key=f"mic_{label_id}")
 
         if audio_val is not None:
+            # Audioni o'qib savatga saqlaymiz
             abytes = audio_val.read()
             if abytes:
                 st.session_state.pending_audios[label_id] = abytes
-            else:
-                st.session_state.pending_audios[label_id] = None
-            _advance(part, part_key, q_idx, total_q)
+            
+            # Keyingi savolga o'tish tugmasi (faqat audio yuklangandan keyin chiqadi)
+            if st.button("Keyingi savol ➡️", key=f"next_{label_id}"):
+                _advance(part, part_key, q_idx, total_q)
+        
         else:
-            if remaining <= 0:
-                # Vaqt tugadi, foydalanuvchi hali yuklamagan — kutamiz
-                st.warning("⏱ Vaqt tugadi. Audiongizni yuboring yoki o'tkazish tugmasini bosing.")
-            c1, c2, c3 = st.columns([2, 1, 2])
-            with c2:
-                st.markdown('<div class="skip-btn">', unsafe_allow_html=True)
-                if st.button("O'tkazish ⏭", key=f"skip_{label_id}"):
-                    st.session_state.pending_audios[label_id] = None
-                    _advance(part, part_key, q_idx, total_q)
-                st.markdown('</div>', unsafe_allow_html=True)
-            if remaining > 0:
-                time.sleep(0.8)
-                st.rerun()
+            # Agar foydalanuvchi gapira olmasa yoki o'tkazib yubormoqchi bo'lsa
+            if st.button("Bu savolni o'tkazib yuborish ⏭"):
+                st.session_state.pending_audios[label_id] = None
+                _advance(part, part_key, q_idx, total_q)
 
+        # Taymer tugaganda ogohlantirish (avtomatik o'tkazib yubormaymiz, chunki foydalanuvchi stopni bosishi kerak)
+        if remaining <= 0:
+            st.warning("⚠️ Vaqt tugadi! Iltimos, audioni to'xtatib, keyingi savolga o'ting.")
+        else:
+            time.sleep(1)
+            st.rerun()
 # ═══════════════════════════════════════════════════════════════════════════════
 # Part 2 / Part 3 uchun: BARCHA SAVOLLAR bitta ekranda, BITTA timer
 # ═══════════════════════════════════════════════════════════════════════════════
