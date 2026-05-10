@@ -984,7 +984,12 @@ def page_results():
         ("🔊 Talaffuz",             r.get("pronunciation_score", 0)),
     ]
     for cname, score in criteria:
-        score = float(score) if score else 0.0
+    try:
+    # Kelgan qiymatni songa aylantirishga harakat qilamiz
+    score = float(score) if score is not None else 0.0
+except (ValueError, TypeError):
+    # Agar xato bo'lsa (masalan score "N/A" bo'lsa), 0.0 deb olamiz
+    score = 0.0
         pct = int((score / 9) * 100)
         c = "#4ade80" if score >= 7 else "#fbbf24" if score >= 5.5 else "#f87171"
         st.markdown(f"""
