@@ -958,6 +958,8 @@ def _do_transcribe(audio_bytes: bytes, fname: str) -> str:
 # PAGE: RESULTS
 # ═══════════════════════════════════════════════════════════════════════════════
 def page_results():
+    st.subheader("Debug: AI dan kelgan ma'lumot")
+    st.write(st.session_state.results)
     r = st.session_state.results or {}
     name = st.session_state.user_name
 
