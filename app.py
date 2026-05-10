@@ -983,7 +983,7 @@ def page_results():
         ("📝 Grammatika Doirasi va Aniqligi",  r.get("grammar_score", 0)),
         ("🔊 Talaffuz",             r.get("pronunciation_score", 0)),
     ]
-  for cname, score in criteria:
+    for cname, score in criteria:
         try:
             # Kelgan qiymatni songa aylantirishga harakat qilamiz
             score = float(score) if score is not None else 0.0
